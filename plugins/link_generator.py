@@ -34,18 +34,18 @@ async def batch(client: Client, message: Message):
             await second_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is taken from DB Channel", quote = True)
             continue
 
-    # Verify that messages have video/document media
+    # Verify that messages have any content
     invalid_messages = []
     try:
         for msg_id in range(f_msg_id, s_msg_id + 1):
             db_message = await client.get_messages(client.db_channel.id, msg_id)
             if db_message:
-                has_media = bool(db_message.video or db_message.document)
-                if not has_media:
+                has_content = bool(db_message.video or db_message.document or db_message.text or db_message.sticker or db_message.caption)
+                if not has_content:
                     invalid_messages.append(msg_id)
                 else:
                     caption = db_message.caption.html if db_message.caption else db_message.text.html if db_message.text else ""
-                    print(f"Verified message ID {msg_id}: HasVideo={bool(db_message.video)}, HasDocument={bool(db_message.document)}, Caption/Text={caption}, ReplyTo={db_message.reply_to_message_id}")
+                    print(f"Verified message ID {msg_id}: HasVideo={bool(db_message.video)}, HasDocument={bool(db_message.document)}, HasText={bool(db_message.text)}, HasSticker={bool(db_message.sticker)}, Caption/Text={caption}, ReplyTo={db_message.reply_to_message_id}")
             else:
                 invalid_messages.append(msg_id)
                 print(f"Message ID {msg_id} not found in DB channel")
@@ -54,7 +54,7 @@ async def batch(client: Client, message: Message):
         await message.reply(f"⚠️ Warning: Could not verify messages:\n<code>{e}</code>", quote=True)
 
     if invalid_messages:
-        await message.reply(f"⚠️ Warning: Messages with IDs {', '.join(map(str, invalid_messages))} have no video or document. They will be skipped.", quote=True)
+        await message.reply(f"⚠️ Warning: Messages with IDs {', '.join(map(str, invalid_messages))} have no content (video, document, text, sticker). They will be skipped.", quote=True)
 
     string = f"get-{f_msg_id * abs(client.db_channel.id)}-{s_msg_id * abs(client.db_channel.id)}"
     base64_string = await encode(string)
@@ -77,16 +77,16 @@ async def link_generator(client: Client, message: Message):
             await channel_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is not taken from DB Channel", quote = True)
             continue
 
-    # Verify that the message has a video/document
+    # Verify that the message has content
     try:
         db_message = await client.get_messages(client.db_channel.id, msg_id)
         if db_message:
-            has_media = bool(db_message.video or db_message.document)
-            if not has_media:
-                await message.reply(f"⚠️ Warning: Message ID {msg_id} has no video or document. It will be skipped.", quote=True)
+            has_content = bool(db_message.video or db_message.document or db_message.text or db_message.sticker or db_message.caption)
+            if not has_content:
+                await message.reply(f"⚠️ Warning: Message ID {msg_id} has no content (video, document, text, sticker). It will be skipped.", quote=True)
             else:
                 caption = db_message.caption.html if db_message.caption else db_message.text.html if db_message.text else ""
-                print(f"Verified message ID {msg_id}: HasVideo={bool(db_message.video)}, HasDocument={bool(db_message.document)}, Caption/Text={caption}, ReplyTo={db_message.reply_to_message_id}")
+                print(f"Verified message ID {msg_id}: HasVideo={bool(db_message.video)}, HasDocument={bool(db_message.document)}, HasText={bool(db_message.text)}, HasSticker={bool(db_message.sticker)}, Caption/Text={caption}, ReplyTo={db_message.reply_to_message_id}")
         else:
             await message.reply(f"⚠️ Warning: Message ID {msg_id} not found in DB channel.", quote=True)
             return
@@ -133,18 +133,18 @@ async def custom_batch(client: Client, message: Message):
         await message.reply("❌ No messages were added to batch.")
         return
 
-    # Verify that messages have video/document
+    # Verify that messages have content
     invalid_messages = []
     try:
         for msg_id in collected:
             db_message = await client.get_messages(client.db_channel.id, msg_id)
             if db_message:
-                has_media = bool(db_message.video or db_message.document)
-                if not has_media:
+                has_content = bool(db_message.video or db_message.document or db_message.text or db_message.sticker or db_message.caption)
+                if not has_content:
                     invalid_messages.append(msg_id)
                 else:
                     caption = db_message.caption.html if db_message.caption else db_message.text.html if db_message.text else ""
-                    print(f"Verified message ID {msg_id}: HasVideo={bool(db_message.video)}, HasDocument={bool(db_message.document)}, Caption/Text={caption}, ReplyTo={db_message.reply_to_message_id}")
+                    print(f"Verified message ID {msg_id}: HasVideo={bool(db_message.video)}, HasDocument={bool(db_message.document)}, HasText={bool(db_message.text)}, HasSticker={bool(db_message.sticker)}, Caption/Text={caption}, ReplyTo={db_message.reply_to_message_id}")
             else:
                 invalid_messages.append(msg_id)
                 print(f"Message ID {msg_id} not found in DB channel")
@@ -153,7 +153,7 @@ async def custom_batch(client: Client, message: Message):
         await message.reply(f"⚠️ Warning: Could not verify messages:\n<code>{e}</code>", quote=True)
 
     if invalid_messages:
-        await message.reply(f"⚠️ Warning: Messages with IDs {', '.join(map(str, invalid_messages))} have no video or document. They will be skipped.", quote=True)
+        await message.reply(f"⚠️ Warning: Messages with IDs {', '.join(map(str, invalid_messages))} have no content (video, document, text, sticker). They will be skipped.", quote=True)
 
     start_id = collected[0] * abs(client.db_channel.id)
     end_id = collected[-1] * abs(client.db_channel.id)
