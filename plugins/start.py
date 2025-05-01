@@ -8,7 +8,6 @@
 # Please see < https://github.com/Codeflix-Bots/FileStore/blob/master/LICENSE >
 #
 # All rights reserved.
-#
 
 import asyncio
 import os
@@ -42,13 +41,13 @@ async def start_command(client: Client, message: Message):
                 [[InlineKeyboardButton("Contact Support", url=BAN_SUPPORT)]]
             )
         )
+
     # ✅ Check Force Subscription
     if not await is_subscribed(client, user_id):
-        #await temp.delete()
         return await not_joined(client, message)
 
-    # File auto-delete time in seconds (Set your desired time in seconds here)
-    FILE_AUTO_DELETE = await db.get_del_timer()  # Example: 3600 seconds (1 hour)
+    # File auto-delete time in seconds
+    FILE_AUTO_DELETE = await db.get_del_timer()
 
     # Add user if not already present
     if not await db.present_user(user_id):
@@ -89,7 +88,7 @@ async def start_command(client: Client, message: Message):
         try:
             messages = await get_messages(client, ids)
         except Exception as e:
-            await message.reply_text("Something went wrong!")
+            await message.reply_text("Something went wrong! Please try again or contact support.")
             print(f"Error getting messages: {e}")
             return
         finally:
@@ -97,24 +96,88 @@ async def start_command(client: Client, message: Message):
 
         codeflix_msgs = []
         for msg in messages:
-            caption = (CUSTOM_CAPTION.format(previouscaption="" if not msg.caption else msg.caption.html, 
-                                             filename=msg.document.file_name) if bool(CUSTOM_CAPTION) and bool(msg.document)
-                       else ("" if not msg.caption else msg.caption.html))
+            # Log message details for debugging
+            caption_content = msg.caption.html if msg.caption else ""
+            text_content = msg.text.html if msg.text else ""
+            filename = msg.document.file_name if msg.document else msg.video.file_name if msg.video else ""
+            print(f"Processing message ID {msg.id}: Caption={caption_content}, Text={text_content}, Filename={filename}, ReplyTo={msg.reply_to_message_id}")
+
+            # Construct caption: Include CUSTOM_CAPTION and description
+            description = caption_content or text_content or filename
+            caption = f"{description}\n{CUSTOM_CAPTION}" if description else f"<b>Video from @Anime_Telugu_English_VS</b>\n{CUSTOM_CAPTION}"
 
             reply_markup = msg.reply_markup if DISABLE_CHANNEL_BUTTON else None
 
             try:
-                copied_msg = await msg.copy(chat_id=message.from_user.id, caption=caption, parse_mode=ParseMode.HTML, 
-                                            reply_markup=reply_markup, protect_content=PROTECT_CONTENT)
-                codeflix_msgs.append(copied_msg)
+                # Copy the main message (video with caption below)
+                if msg.video or msg.document:  # Ensure only media messages are copied
+                    copied_msg = await msg.copy(
+                        chat_id=message.from_user.id,
+                        caption=caption,
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=reply_markup,
+                        protect_content=PROTECT_CONTENT
+                    )
+                    codeflix_msgs.append(copied_msg)
+                    print(f"Copied main message ID {msg.id} with caption: {caption}")
+                else:
+                    print(f"Skipping message ID {msg.id}: No video or document to copy")
+                    continue
+
+                # Check for reply message (additional description)
+                if msg.reply_to_message_id:
+                    reply_msg = await client.get_messages(client.db_channel.id, msg.reply_to_message_id)
+                    if reply_msg:
+                        reply_caption = reply_msg.caption.html if reply_msg.caption else reply_msg.text.html if reply_msg.text else ""
+                        copied_reply = await reply_msg.copy(
+                            chat_id=message.from_user.id,
+                            caption=reply_caption,
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=reply_msg.reply_markup if DISABLE_CHANNEL_BUTTON else None,
+                            protect_content=PROTECT_CONTENT
+                        )
+                        codeflix_msgs.append(copied_reply)
+                        print(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id}: {reply_caption}")
+                    else:
+                        print(f"Additional description (reply message ID {msg.reply_to_message_id}) not found for main message ID {msg.id}")
+                else:
+                    print(f"No additional description (reply message) for main message ID {msg.id}")
+
+                # Add delay to avoid rate limits
+                await asyncio.sleep(0.5)
+
             except FloodWait as e:
                 await asyncio.sleep(e.x)
-                copied_msg = await msg.copy(chat_id=message.from_user.id, caption=caption, parse_mode=ParseMode.HTML, 
-                                            reply_markup=reply_markup, protect_content=PROTECT_CONTENT)
-                codeflix_msgs.append(copied_msg)
+                if msg.video or msg.document:
+                    copied_msg = await msg.copy(
+                        chat_id=message.from_user.id,
+                        caption=caption,
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=reply_markup,
+                        protect_content=PROTECT_CONTENT
+                    )
+                    codeflix_msgs.append(copied_msg)
+                    print(f"Copied main message ID {msg.id} with caption after FloodWait: {caption}")
+                if msg.reply_to_message_id:
+                    reply_msg = await client.get_messages(client.db_channel.id, msg.reply_to_message_id)
+                    if reply_msg:
+                        reply_caption = reply_msg.caption.html if reply_msg.caption else reply_msg.text.html if reply_msg.text else ""
+                        copied_reply = await reply_msg.copy(
+                            chat_id=message.from_user.id,
+                            caption=reply_caption,
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=reply_msg.reply_markup if DISABLE_CHANNEL_BUTTON else None,
+                            protect_content=PROTECT_CONTENT
+                        )
+                        codeflix_msgs.append(copied_reply)
+                        print(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id} after FloodWait: {reply_caption}")
+                    else:
+                        print(f"Additional description (reply message ID {msg.reply_to_message_id}) not found for main message ID {msg.id} after FloodWait")
+                await asyncio.sleep(0.5)
             except Exception as e:
-                print(f"Failed to send message: {e}")
-                pass
+                print(f"Failed to send message ID {msg.id} or its description: {e}")
+                await message.reply_text(f"⚠️ Failed to send message ID {msg.id}. Please try again or contact support.")
+                continue
 
         if FILE_AUTO_DELETE > 0:
             notification_msg = await message.reply(
@@ -123,10 +186,10 @@ async def start_command(client: Client, message: Message):
 
             await asyncio.sleep(FILE_AUTO_DELETE)
 
-            for snt_msg in codeflix_msgs:    
+            for snt_msg in codeflix_msgs:
                 if snt_msg:
-                    try:    
-                        await snt_msg.delete()  
+                    try:
+                        await snt_msg.delete()
                     except Exception as e:
                         print(f"Error deleting message {snt_msg.id}: {e}")
 
@@ -141,7 +204,7 @@ async def start_command(client: Client, message: Message):
                 ) if reload_url else None
 
                 await notification_msg.edit(
-                    "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ 👇</b>",
+                    "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜀ɪʟᴇ 👇</b>",
                     reply_markup=keyboard
                 )
             except Exception as e:
@@ -167,14 +230,11 @@ async def start_command(client: Client, message: Message):
             ),
             "reply_markup": reply_markup
         }
-        # Only add message_effect_id if supported
         if hasattr(Message, "reply_photo") and "message_effect_id" in Message.reply_photo.__code__.co_varnames:
             reply_kwargs["message_effect_id"] = 5104841245755180586
 
         await message.reply_photo(**reply_kwargs)
-        
         return
-
 
 chat_data_cache = {}
 
@@ -186,15 +246,14 @@ async def not_joined(client: Client, message: Message):
     count = 0
 
     try:
-        all_channels = await db.show_channels()  # Should return list of (chat_id, mode) tuples
+        all_channels = await db.show_channels()
         for total, chat_id in enumerate(all_channels, start=1):
-            mode = await db.get_channel_mode(chat_id)  # fetch mode 
+            mode = await db.get_channel_mode(chat_id)
 
             await message.reply_chat_action(ChatAction.TYPING)
 
             if not await is_sub(client, user_id, chat_id):
                 try:
-                    # Cache chat info
                     if chat_id in chat_data_cache:
                         data = chat_data_cache[chat_id]
                     else:
@@ -203,7 +262,6 @@ async def not_joined(client: Client, message: Message):
 
                     name = data.title
 
-                    # Generate proper invite link based on the mode
                     if mode == "on" and not data.username:
                         invite = await client.create_chat_invite_link(
                             chat_id=chat_id,
@@ -211,7 +269,6 @@ async def not_joined(client: Client, message: Message):
                             expire_date=datetime.utcnow() + timedelta(seconds=FSUB_LINK_EXPIRY) if FSUB_LINK_EXPIRY else None
                         )
                         link = invite.invite_link
-
                     else:
                         if data.username:
                             link = f"https://t.me/{data.username}"
@@ -233,7 +290,6 @@ async def not_joined(client: Client, message: Message):
                         f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
                     )
 
-        # Retry Button
         try:
             buttons.append([
                 InlineKeyboardButton(
@@ -263,9 +319,7 @@ async def not_joined(client: Client, message: Message):
             f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
         )
 
-#=====================================================================================##
-
 @Bot.on_message(filters.command('commands') & filters.private & admin)
-async def bcmd(bot: Bot, message: Message):        
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data = "close")]])
-    await message.reply(text=CMD_TXT, reply_markup = reply_markup, quote= True)
+async def bcmd(bot: Bot, message: Message):
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data="close")]])
+    await message.reply(text=CMD_TXT, reply_markup=reply_markup, quote=True)
