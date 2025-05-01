@@ -47,7 +47,7 @@ async def start_command(client: Client, message: Message):
         return await not_joined(client, message)
 
     # File auto-delete time in seconds
-    FILE_AUTO_DELETE = await db.get_del_timer()
+    FILE_AUTO_DELETE = await db.get_del_timer() or 600  # Default to 10 minutes (600 seconds)
 
     # Add user if not already present
     if not await db.present_user(user_id):
@@ -95,120 +95,212 @@ async def start_command(client: Client, message: Message):
             await temp_msg.delete()
 
         codeflix_msgs = []
+        sent_ids = set()  # Track sent message IDs to prevent duplicates
         for msg in messages:
+            # Skip if message ID was already processed
+            if msg.id in sent_ids:
+                print(f"Skipping duplicate message ID {msg.id}")
+                continue
+
             # Log message details for debugging
             caption_content = msg.caption.html if msg.caption else ""
             text_content = msg.text.html if msg.text else ""
             filename = msg.document.file_name if msg.document else msg.video.file_name if msg.video else ""
-            print(f"Processing message ID {msg.id}: Caption={caption_content}, Text={text_content}, Filename={filename}, ReplyTo={msg.reply_to_message_id}")
-
-            # Construct caption: Include CUSTOM_CAPTION and description
-            description = caption_content or text_content or filename
-            caption = f"{description}\n{CUSTOM_CAPTION}" if description else f"<b>Video from @Anime_Telugu_English_VS</b>\n{CUSTOM_CAPTION}"
-
-            reply_markup = msg.reply_markup if DISABLE_CHANNEL_BUTTON else None
+            has_sticker = bool(msg.sticker)
+            print(f"Processing message ID {msg.id}: Caption={caption_content}, Text={text_content}, Filename={filename}, Sticker={has_sticker}, ReplyTo={msg.reply_to_message_id}")
 
             try:
-                # Copy the main message (video with caption below)
-                if msg.video or msg.document:  # Ensure only media messages are copied
+                # Construct caption for videos/documents
+                if msg.video or msg.document:
+                    description = caption_content or filename or "<b>Video from @Anime_Telugu_English_VS</b>"
+                    caption = f"{description}\n{CUSTOM_CAPTION}"
+                else:
+                    caption = caption_content or text_content  # Use original caption/text for non-media
+
+                # Copy the main message based on content type
+                if msg.video or msg.document:
                     copied_msg = await msg.copy(
                         chat_id=message.from_user.id,
                         caption=caption,
                         parse_mode=ParseMode.HTML,
-                        reply_markup=reply_markup,
+                        reply_markup=msg.reply_markup if DISABLE_CHANNEL_BUTTON else None,
                         protect_content=PROTECT_CONTENT
                     )
                     codeflix_msgs.append(copied_msg)
+                    sent_ids.add(msg.id)
                     print(f"Copied main message ID {msg.id} with caption: {caption}")
+                elif msg.sticker:
+                    copied_msg = await client.send_sticker(
+                        chat_id=message.from_user.id,
+                        sticker=msg.sticker.file_id
+                    )
+                    codeflix_msgs.append(copied_msg)
+                    sent_ids.add(msg.id)
+                    print(f"Copied sticker message ID {msg.id}")
+                elif msg.text or caption_content:
+                    copied_msg = await client.send_message(
+                        chat_id=message.from_user.id,
+                        text=caption,
+                        parse_mode=ParseMode.HTML,
+                        disable_web_page_preview=True
+                    )
+                    codeflix_msgs.append(copied_msg)
+                    sent_ids.add(msg.id)
+                    print(f"Copied text message ID {msg.id}: {caption}")
                 else:
-                    print(f"Skipping message ID {msg.id}: No video or document to copy")
+                    print(f"Skipping message ID {msg.id}: No valid content to copy")
                     continue
 
                 # Check for reply message (additional description)
-                if msg.reply_to_message_id:
+                if msg.reply_to_message_id and msg.reply_to_message_id not in sent_ids:
                     reply_msg = await client.get_messages(client.db_channel.id, msg.reply_to_message_id)
                     if reply_msg:
                         reply_caption = reply_msg.caption.html if reply_msg.caption else reply_msg.text.html if reply_msg.text else ""
-                        copied_reply = await reply_msg.copy(
-                            chat_id=message.from_user.id,
-                            caption=reply_caption,
-                            parse_mode=ParseMode.HTML,
-                            reply_markup=reply_msg.reply_markup if DISABLE_CHANNEL_BUTTON else None,
-                            protect_content=PROTECT_CONTENT
-                        )
-                        codeflix_msgs.append(copied_reply)
-                        print(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id}: {reply_caption}")
+                        if reply_msg.video or reply_msg.document:
+                            copied_reply = await reply_msg.copy(
+                                chat_id=message.from_user.id,
+                                caption=reply_caption,
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=reply_msg.reply_markup if DISABLE_CHANNEL_BUTTON else None,
+                                protect_content=PROTECT_CONTENT
+                            )
+                            codeflix_msgs.append(copied_reply)
+                            sent_ids.add(reply_msg.id)
+                            print(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id}: {reply_caption}")
+                        elif reply_msg.sticker:
+                            copied_reply = await client.send_sticker(
+                                chat_id=message.from_user.id,
+                                sticker=reply_msg.sticker.file_id
+                            )
+                            codeflix_msgs.append(copied_reply)
+                            sent_ids.add(reply_msg.id)
+                            print(f"Copied sticker reply message ID {msg.reply_to_message_id} for main message ID {msg.id}")
+                        elif reply_msg.text or reply_caption:
+                            copied_reply = await client.send_message(
+                                chat_id=message.from_user.id,
+                                text=reply_caption,
+                                parse_mode=ParseMode.HTML,
+                                disable_web_page_preview=True
+                            )
+                            codeflix_msgs.append(copied_reply)
+                            sent_ids.add(reply_msg.id)
+                            print(f"Copied text reply message ID {msg.reply_to_message_id} for main message ID {msg.id}: {reply_caption}")
                     else:
                         print(f"Additional description (reply message ID {msg.reply_to_message_id}) not found for main message ID {msg.id}")
-                else:
-                    print(f"No additional description (reply message) for main message ID {msg.id}")
 
                 # Add delay to avoid rate limits
                 await asyncio.sleep(0.5)
 
             except FloodWait as e:
                 await asyncio.sleep(e.x)
-                if msg.video or msg.document:
-                    copied_msg = await msg.copy(
-                        chat_id=message.from_user.id,
-                        caption=caption,
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=reply_markup,
-                        protect_content=PROTECT_CONTENT
-                    )
-                    codeflix_msgs.append(copied_msg)
-                    print(f"Copied main message ID {msg.id} with caption after FloodWait: {caption}")
-                if msg.reply_to_message_id:
-                    reply_msg = await client.get_messages(client.db_channel.id, msg.reply_to_message_id)
-                    if reply_msg:
-                        reply_caption = reply_msg.caption.html if reply_msg.caption else reply_msg.text.html if reply_msg.text else ""
-                        copied_reply = await reply_msg.copy(
+                if msg.id not in sent_ids:
+                    if msg.video or msg.document:
+                        copied_msg = await msg.copy(
                             chat_id=message.from_user.id,
-                            caption=reply_caption,
+                            caption=caption,
                             parse_mode=ParseMode.HTML,
-                            reply_markup=reply_msg.reply_markup if DISABLE_CHANNEL_BUTTON else None,
+                            reply_markup=msg.reply_markup if DISABLE_CHANNEL_BUTTON else None,
                             protect_content=PROTECT_CONTENT
                         )
-                        codeflix_msgs.append(copied_reply)
-                        print(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id} after FloodWait: {reply_caption}")
-                    else:
-                        print(f"Additional description (reply message ID {msg.reply_to_message_id}) not found for main message ID {msg.id} after FloodWait")
+                        codeflix_msgs.append(copied_msg)
+                        sent_ids.add(msg.id)
+                        print(f"Copied main message ID {msg.id} with caption after FloodWait: {caption}")
+                    elif msg.sticker:
+                        copied_msg = await client.send_sticker(
+                            chat_id=message.from_user.id,
+                            sticker=msg.sticker.file_id
+                        )
+                        codeflix_msgs.append(copied_msg)
+                        sent_ids.add(msg.id)
+                        print(f"Copied sticker message ID {msg.id} after FloodWait")
+                    elif msg.text or caption_content:
+                        copied_msg = await client.send_message(
+                            chat_id=message.from_user.id,
+                            text=caption,
+                            parse_mode=ParseMode.HTML,
+                            disable_web_page_preview=True
+                        )
+                        codeflix_msgs.append(copied_msg)
+                        sent_ids.add(msg.id)
+                        print(f"Copied text message ID {msg.id} after FloodWait: {caption}")
+                    if msg.reply_to_message_id and msg.reply_to_message_id not in sent_ids:
+                        reply_msg = await client.get_messages(client.db_channel.id, msg.reply_to_message_id)
+                        if reply_msg:
+                            reply_caption = reply_msg.caption.html if reply_msg.caption else reply_msg.text.html if reply_msg.text else ""
+                            if reply_msg.video or reply_msg.document:
+                                copied_reply = await reply_msg.copy(
+                                    chat_id=message.from_user.id,
+                                    caption=reply_caption,
+                                    parse_mode=ParseMode.HTML,
+                                    reply_markup=reply_msg.reply_markup if DISABLE_CHANNEL_BUTTON else None,
+                                    protect_content=PROTECT_CONTENT
+                                )
+                                codeflix_msgs.append(copied_reply)
+                                sent_ids.add(reply_msg.id)
+                                print(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id} after FloodWait: {reply_caption}")
+                            elif reply_msg.sticker:
+                                copied_reply = await client.send_sticker(
+                                    chat_id=message.from_user.id,
+                                    sticker=reply_msg.sticker.file_id
+                                )
+                                codeflix_msgs.append(copied_reply)
+                                sent_ids.add(reply_msg.id)
+                                print(f"Copied sticker reply message ID {msg.reply_to_message_id} for main message ID {msg.id} after FloodWait")
+                            elif reply_msg.text or reply_caption:
+                                copied_reply = await client.send_message(
+                                    chat_id=message.from_user.id,
+                                    text=reply_caption,
+                                    parse_mode=ParseMode.HTML,
+                                    disable_web_page_preview=True
+                                )
+                                codeflix_msgs.append(copied_reply)
+                                sent_ids.add(reply_msg.id)
+                                print(f"Copied text reply message ID {msg.reply_to_message_id} for main message ID {msg.id} after FloodWait: {reply_caption}")
+                        else:
+                            print(f"Additional description (reply message ID {msg.reply_to_message_id}) not found for main message ID {msg.id} after FloodWait")
                 await asyncio.sleep(0.5)
             except Exception as e:
-                print(f"Failed to send message ID {msg.id} or its description: {e}")
+                print(f"Failed to copy message ID {msg.id} or its description: {e}")
                 await message.reply_text(f"⚠️ Failed to send message ID {msg.id}. Please try again or contact support.")
                 continue
 
-        if FILE_AUTO_DELETE > 0:
-            notification_msg = await message.reply(
-                f"<b>Tʜɪs Fɪʟᴇ ᴡɪʟʟ ʙᴇ Dᴇʟᴇᴛᴇᴅ ɪɴ  {get_exp_time(FILE_AUTO_DELETE)}. Pʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs Dᴇʟᴇᴛᴇᴅ.</b>"
-            )
-
-            await asyncio.sleep(FILE_AUTO_DELETE)
-
-            for snt_msg in codeflix_msgs:
-                if snt_msg:
-                    try:
-                        await snt_msg.delete()
-                    except Exception as e:
-                        print(f"Error deleting message {snt_msg.id}: {e}")
-
+        if FILE_AUTO_DELETE > 0 and codeflix_msgs:  # Only send notification if messages were copied
             try:
-                reload_url = (
-                    f"https://t.me/{client.username}?start={message.command[1]}"
-                    if message.command and len(message.command) > 1
-                    else None
+                notification_msg = await message.reply(
+                    f"<b>Tʜɪs Fɪʟᴇ ᴡɪʟʟ ʙᴇ Dᴇʟᴇᴛᴇᴅ ɪɴ {get_exp_time(FILE_AUTO_DELETE)}. Pʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs Dᴇʟᴇᴛᴇᴅ.</b>",
+                    quote=True
                 )
-                keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)]]
-                ) if reload_url else None
 
-                await notification_msg.edit(
-                    "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜀ɪʟᴇ 👇</b>",
-                    reply_markup=keyboard
-                )
+                await asyncio.sleep(FILE_AUTO_DELETE)
+
+                for snt_msg in codeflix_msgs:
+                    if snt_msg:
+                        try:
+                            await snt_msg.delete()
+                            print(f"Deleted message ID {snt_msg.id}")
+                        except Exception as e:
+                            print(f"Error deleting message {snt_msg.id}: {e}")
+
+                try:
+                    reload_url = (
+                        f"https://t.me/{client.username}?start={message.command[1]}"
+                        if message.command and len(message.command) > 1
+                        else None
+                    )
+                    keyboard = InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)]]
+                    ) if reload_url else None
+
+                    await notification_msg.edit(
+                        "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜀ɪʟᴇ 👇</b>",
+                        reply_markup=keyboard
+                    )
+                    print("Updated auto-delete notification with 'Get File Again' button")
+                except Exception as e:
+                    print(f"Error updating notification with 'Get File Again' button: {e}")
             except Exception as e:
-                print(f"Error updating notification with 'Get File Again' button: {e}")
+                print(f"Error sending auto-delete notification: {e}")
+                await message.reply_text("⚠️ Failed to send auto-delete notification. Files may still be deleted.")
     else:
         reply_markup = InlineKeyboardMarkup(
             [
