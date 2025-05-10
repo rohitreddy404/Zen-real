@@ -1,5 +1,6 @@
 # Don't Remove Credit @CodeFlix_Bots, @clutch008
 # Ask Doubt on telegram @CodeflixSupport
+# Codeflix_Botz, rohit_1888
 #
 # Copyright (C) 2025 by Codeflix-Bots@Github, < https://github.com/Codeflix-Bots >.
 #
@@ -14,6 +15,7 @@ import os
 import random
 import sys
 import time
+import logging
 from datetime import datetime, timedelta
 from pyrogram import Client, filters, __version__
 from pyrogram.enums import ParseMode, ChatAction
@@ -25,11 +27,75 @@ from config import *
 from helper_func import *
 from database.database import *
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 BAN_SUPPORT = f"{BAN_SUPPORT}"
+
+# Anime quotes for random selection
+ANIME_QUOTES = [
+    "Believe it! – Naruto Uzumaki, Naruto",
+    "The world isn't perfect, but it's there for us trying the best it can. – Rin Okumura, Blue Exorcist",
+    "If you don't like your destiny, don't accept it. – Eren Yeager, Attack on Titan",
+    "Hard work is worthless for those that don't believe in themselves. – Kakashi Hatake, Naruto",
+    "No matter how deep the night, it always turns to day, eventually. – Luffy, One Piece"
+]
+
+# Sticker file IDs for random selection
+LOADING_STICKERS = [
+    "CAACAgUAAxkBAAEOcYxoHtzAF17JX4JkHhgFVQUoIkdEzgACpxUAAoIFuFYlqHCk6hgEjDYE",
+    "CAACAgUAAxkBAAEOcY5oHtzafUDbnmOGh6FduTxYSIMHZwAC_RUAAgTGyVZyVIL0jUhAJTYE",
+    "CAACAgUAAxkBAAEOcZBoHtzt2LPLp2H6yTblKDPdT9oroQACrRUAAmSm2FeGMk8-cGYtcDYE"
+]
+
+async def show_single_sticker(client: Client, chat_id: int):
+    """Display a single random sticker with a welcome animation and separate caption message."""
+    try:
+        # Send animated welcome text
+        welcome_msg = await client.send_message(
+            chat_id=chat_id,
+            text="<b>Loading</b>"
+        )
+        for i in range(1, 4):
+            await welcome_msg.edit(f"<b>Loading{'.' * i}</b>")
+            await asyncio.sleep(0.3)
+        await welcome_msg.delete()
+
+        # Show typing action
+        await client.send_chat_action(chat_id, ChatAction.TYPING)
+
+        # Randomly select one sticker
+        sticker_id = random.choice(LOADING_STICKERS)
+        # Send the sticker
+        sticker_msg = await client.send_sticker(
+            chat_id=chat_id,
+            sticker=sticker_id
+        )
+        # Send the caption as a separate message
+        caption_msg = await client.send_message(
+            chat_id=chat_id,
+            text="<i>Ready for some anime action? 🎬</i>",
+            parse_mode=ParseMode.HTML
+        )
+        # Display for 1.5 seconds
+        await asyncio.sleep(1.5)
+        # Delete the sticker and caption
+        try:
+            await sticker_msg.delete()
+            await caption_msg.delete()
+        except Exception as e:
+            logger.warning(f"Failed to delete sticker {sticker_id} or caption: {e}")
+    except Exception as e:
+        logger.error(f"Failed to show sticker, caption, or welcome animation: {e}")
+        # Continue with main logic even if sticker fails
 
 @Bot.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
     user_id = message.from_user.id
+
+    # Show a single random sticker with welcome animation
+    await show_single_sticker(client, user_id)
 
     # Check if user is banned
     banned_users = await db.get_ban_users()
@@ -38,11 +104,11 @@ async def start_command(client: Client, message: Message):
             "<b>⛔️ You are Bᴀɴɴᴇᴅ from using this bot.</b>\n\n"
             "<i>Contact support if you think this is a mistake.</i>",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Contact Support", url=BAN_SUPPORT)]]
+                [[InlineKeyboardButton("📞 Contact Support", url=f"https://t.me/Clutch008")]]
             )
         )
 
-    # ✅ Check Force Subscription
+    # Check Force Subscription
     if not await is_subscribed(client, user_id):
         return await not_joined(client, message)
 
@@ -53,8 +119,8 @@ async def start_command(client: Client, message: Message):
     if not await db.present_user(user_id):
         try:
             await db.add_user(user_id)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to add user {user_id}: {e}")
 
     # Handle normal message flow
     text = message.text
@@ -74,22 +140,22 @@ async def start_command(client: Client, message: Message):
                 end = int(int(argument[2]) / abs(client.db_channel.id))
                 ids = range(start, end + 1) if start <= end else list(range(start, end - 1, -1))
             except Exception as e:
-                print(f"Error decoding IDs: {e}")
+                logger.error(f"Error decoding IDs: {e}")
                 return
 
         elif len(argument) == 2:
             try:
                 ids = [int(int(argument[1]) / abs(client.db_channel.id))]
             except Exception as e:
-                print(f"Error decoding ID: {e}")
+                logger.error(f"Error decoding ID: {e}")
                 return
 
         temp_msg = await message.reply("<b>Please wait...</b>")
         try:
             messages = await get_messages(client, ids)
         except Exception as e:
-            await message.reply_text("Something went wrong! Please try again or contact support.")
-            print(f"Error getting messages: {e}")
+            await message.reply_text("Something went wrong! Please try again or contact @Clutch008.")
+            logger.error(f"Error getting messages: {e}")
             return
         finally:
             await temp_msg.delete()
@@ -99,7 +165,7 @@ async def start_command(client: Client, message: Message):
         for msg in messages:
             # Skip if message ID was already processed
             if msg.id in sent_ids:
-                print(f"Skipping duplicate message ID {msg.id}")
+                logger.info(f"Skipping duplicate message ID {msg.id}")
                 continue
 
             # Log message details for debugging
@@ -107,7 +173,7 @@ async def start_command(client: Client, message: Message):
             text_content = msg.text.html if msg.text else ""
             filename = msg.document.file_name if msg.document else msg.video.file_name if msg.video else ""
             has_sticker = bool(msg.sticker)
-            print(f"Processing message ID {msg.id}: Caption={caption_content}, Text={text_content}, Filename={filename}, Sticker={has_sticker}, ReplyTo={msg.reply_to_message_id}")
+            logger.debug(f"Processing message ID {msg.id}: Caption={caption_content}, Text={text_content}, Filename={filename}, Sticker={has_sticker}, ReplyTo={msg.reply_to_message_id}")
 
             try:
                 # Construct caption for videos/documents
@@ -128,7 +194,7 @@ async def start_command(client: Client, message: Message):
                     )
                     codeflix_msgs.append(copied_msg)
                     sent_ids.add(msg.id)
-                    print(f"Copied main message ID {msg.id} with caption: {caption}")
+                    logger.info(f"Copied main message ID {msg.id} with caption: {caption}")
                 elif msg.sticker:
                     copied_msg = await client.send_sticker(
                         chat_id=message.from_user.id,
@@ -136,7 +202,7 @@ async def start_command(client: Client, message: Message):
                     )
                     codeflix_msgs.append(copied_msg)
                     sent_ids.add(msg.id)
-                    print(f"Copied sticker message ID {msg.id}")
+                    logger.info(f"Copied sticker message ID {msg.id}")
                 elif msg.text or caption_content:
                     copied_msg = await client.send_message(
                         chat_id=message.from_user.id,
@@ -146,9 +212,9 @@ async def start_command(client: Client, message: Message):
                     )
                     codeflix_msgs.append(copied_msg)
                     sent_ids.add(msg.id)
-                    print(f"Copied text message ID {msg.id}: {caption}")
+                    logger.info(f"Copied text message ID {msg.id}: {caption}")
                 else:
-                    print(f"Skipping message ID {msg.id}: No valid content to copy")
+                    logger.info(f"Skipping message ID {msg.id}: No valid content to copy")
                     continue
 
                 # Check for reply message (additional description)
@@ -166,7 +232,7 @@ async def start_command(client: Client, message: Message):
                             )
                             codeflix_msgs.append(copied_reply)
                             sent_ids.add(reply_msg.id)
-                            print(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id}: {reply_caption}")
+                            logger.info(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id}: {reply_caption}")
                         elif reply_msg.sticker:
                             copied_reply = await client.send_sticker(
                                 chat_id=message.from_user.id,
@@ -174,7 +240,7 @@ async def start_command(client: Client, message: Message):
                             )
                             codeflix_msgs.append(copied_reply)
                             sent_ids.add(reply_msg.id)
-                            print(f"Copied sticker reply message ID {msg.reply_to_message_id} for main message ID {msg.id}")
+                            logger.info(f"Copied sticker reply message ID {msg.reply_to_message_id} for main message ID {msg.id}")
                         elif reply_msg.text or reply_caption:
                             copied_reply = await client.send_message(
                                 chat_id=message.from_user.id,
@@ -184,9 +250,9 @@ async def start_command(client: Client, message: Message):
                             )
                             codeflix_msgs.append(copied_reply)
                             sent_ids.add(reply_msg.id)
-                            print(f"Copied text reply message ID {msg.reply_to_message_id} for main message ID {msg.id}: {reply_caption}")
+                            logger.info(f"Copied text reply message ID {msg.reply_to_message_id} for main message ID {msg.id}: {reply_caption}")
                     else:
-                        print(f"Additional description (reply message ID {msg.reply_to_message_id}) not found for main message ID {msg.id}")
+                        logger.info(f"Additional description (reply message ID {msg.reply_to_message_id}) not found for main message ID {msg.id}")
 
                 # Add delay to avoid rate limits
                 await asyncio.sleep(0.5)
@@ -204,7 +270,7 @@ async def start_command(client: Client, message: Message):
                         )
                         codeflix_msgs.append(copied_msg)
                         sent_ids.add(msg.id)
-                        print(f"Copied main message ID {msg.id} with caption after FloodWait: {caption}")
+                        logger.info(f"Copied main message ID {msg.id} with caption after FloodWait: {caption}")
                     elif msg.sticker:
                         copied_msg = await client.send_sticker(
                             chat_id=message.from_user.id,
@@ -212,7 +278,7 @@ async def start_command(client: Client, message: Message):
                         )
                         codeflix_msgs.append(copied_msg)
                         sent_ids.add(msg.id)
-                        print(f"Copied sticker message ID {msg.id} after FloodWait")
+                        logger.info(f"Copied sticker message ID {msg.id} after FloodWait")
                     elif msg.text or caption_content:
                         copied_msg = await client.send_message(
                             chat_id=message.from_user.id,
@@ -222,7 +288,7 @@ async def start_command(client: Client, message: Message):
                         )
                         codeflix_msgs.append(copied_msg)
                         sent_ids.add(msg.id)
-                        print(f"Copied text message ID {msg.id} after FloodWait: {caption}")
+                        logger.info(f"Copied text message ID {msg.id} after FloodWait: {caption}")
                     if msg.reply_to_message_id and msg.reply_to_message_id not in sent_ids:
                         reply_msg = await client.get_messages(client.db_channel.id, msg.reply_to_message_id)
                         if reply_msg:
@@ -237,7 +303,7 @@ async def start_command(client: Client, message: Message):
                                 )
                                 codeflix_msgs.append(copied_reply)
                                 sent_ids.add(reply_msg.id)
-                                print(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id} after FloodWait: {reply_caption}")
+                                logger.info(f"Copied additional description (reply message ID {msg.reply_to_message_id}) for main message ID {msg.id} after FloodWait: {reply_caption}")
                             elif reply_msg.sticker:
                                 copied_reply = await client.send_sticker(
                                     chat_id=message.from_user.id,
@@ -245,7 +311,7 @@ async def start_command(client: Client, message: Message):
                                 )
                                 codeflix_msgs.append(copied_reply)
                                 sent_ids.add(reply_msg.id)
-                                print(f"Copied sticker reply message ID {msg.reply_to_message_id} for main message ID {msg.id} after FloodWait")
+                                logger.info(f"Copied sticker reply message ID {msg.reply_to_message_id} for main message ID {msg.id} after FloodWait")
                             elif reply_msg.text or reply_caption:
                                 copied_reply = await client.send_message(
                                     chat_id=message.from_user.id,
@@ -255,13 +321,13 @@ async def start_command(client: Client, message: Message):
                                 )
                                 codeflix_msgs.append(copied_reply)
                                 sent_ids.add(reply_msg.id)
-                                print(f"Copied text reply message ID {msg.reply_to_message_id} for main message ID {msg.id} after FloodWait: {reply_caption}")
+                                logger.info(f"Copied text reply message ID {msg.reply_to_message_id} for main message ID {msg.id} after FloodWait: {reply_caption}")
                         else:
-                            print(f"Additional description (reply message ID {msg.reply_to_message_id}) not found for main message ID {msg.id} after FloodWait")
+                            logger.info(f"Additional description (reply message ID {msg.reply_to_message_id}) not found for main message ID {msg.id} after FloodWait")
                 await asyncio.sleep(0.5)
             except Exception as e:
-                print(f"Failed to copy message ID {msg.id} or its description: {e}")
-                await message.reply_text(f"⚠️ Failed to send message ID {msg.id}. Please try again or contact support.")
+                logger.error(f"Failed to copy message ID {msg.id} or its description: {e}")
+                await message.reply_text(f"⚠️ Failed to send message ID {msg.id}. Please try again or contact @Clutch008.")
                 continue
 
         if FILE_AUTO_DELETE > 0 and codeflix_msgs:  # Only send notification if messages were copied
@@ -277,9 +343,9 @@ async def start_command(client: Client, message: Message):
                     if snt_msg:
                         try:
                             await snt_msg.delete()
-                            print(f"Deleted message ID {snt_msg.id}")
+                            logger.info(f"Deleted message ID {snt_msg.id}")
                         except Exception as e:
-                            print(f"Error deleting message {snt_msg.id}: {e}")
+                            logger.error(f"Error deleting message {snt_msg.id}: {e}")
 
                 try:
                     reload_url = (
@@ -288,26 +354,32 @@ async def start_command(client: Client, message: Message):
                         else None
                     )
                     keyboard = InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)]]
+                        [[InlineKeyboardButton("🔄 ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)]]
                     ) if reload_url else None
 
                     await notification_msg.edit(
                         "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜀ɪʟᴇ 👇</b>",
                         reply_markup=keyboard
                     )
-                    print("Updated auto-delete notification with 'Get File Again' button")
+                    logger.info("Updated auto-delete notification with 'Get File Again' button")
                 except Exception as e:
-                    print(f"Error updating notification with 'Get File Again' button: {e}")
+                    logger.error(f"Error updating notification with 'Get File Again' button: {e}")
             except Exception as e:
-                print(f"Error sending auto-delete notification: {e}")
+                logger.error(f"Error sending auto-delete notification: {e}")
                 await message.reply_text("⚠️ Failed to send auto-delete notification. Files may still be deleted.")
     else:
+        # Random anime quote
+        quote = random.choice(ANIME_QUOTES)
+
         reply_markup = InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/anime_rtxx")],
                 [
-                    InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
-                    InlineKeyboardButton('ʜᴇʟᴘ •', callback_data="help")
+                    InlineKeyboardButton("🌟 ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs", url="https://t.me/anime_rtxx"),
+                    InlineKeyboardButton("📢 ᴜᴘᴅᴀᴛᴇs", url="https://t.me/anime_rtxx")
+                ],
+                [
+                    InlineKeyboardButton("ℹ️ ᴀʙᴏᴜᴛ", callback_data="about"),
+                    InlineKeyboardButton("❓ ʜᴇʟᴘ", callback_data="help")
                 ]
             ]
         )
@@ -319,8 +391,10 @@ async def start_command(client: Client, message: Message):
                 username=None if not message.from_user.username else '@' + message.from_user.username,
                 mention=message.from_user.mention,
                 id=message.from_user.id
-            ),
-            "reply_markup": reply_markup
+            ) + f"\n\n<b>🎉 Welcome to the ultimate anime hub! Explore exclusive content and join our community! 🚀</b>\n\n"
+                      f"<b>Anime Quote:</b> <i>{quote}</i>",
+            "reply_markup": reply_markup,
+            "parse_mode": ParseMode.HTML
         }
         if hasattr(Message, "reply_photo") and "message_effect_id" in Message.reply_photo.__code__.co_varnames:
             reply_kwargs["message_effect_id"] = 5104841245755180586
@@ -371,15 +445,15 @@ async def not_joined(client: Client, message: Message):
                             )
                             link = invite.invite_link
 
-                    buttons.append([InlineKeyboardButton(text=name, url=link)])
+                    buttons.append([InlineKeyboardButton(text=f"📢 {name}", url=link)])
                     count += 1
                     await temp.edit(f"<b>{'! ' * count}</b>")
 
                 except Exception as e:
-                    print(f"Error with chat {chat_id}: {e}")
+                    logger.error(f"Error with chat {chat_id}: {e}")
                     return await temp.edit(
-                        f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @clutch008</i></b>\n"
-                        f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
+                        f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @Clutch008</i></b>\n"
+                        f"<i>Reason: {e}</i>"
                     )
 
         try:
@@ -400,15 +474,16 @@ async def not_joined(client: Client, message: Message):
                 username=None if not message.from_user.username else '@' + message.from_user.username,
                 mention=message.from_user.mention,
                 id=message.from_user.id
-            ),
+            ) + "\n\n<b>🔥 Join our channels to unlock exclusive anime content!</b>",
             reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=ParseMode.HTML
         )
 
     except Exception as e:
-        print(f"Final Error: {e}")
+        logger.error(f"Final Error: {e}")
         await temp.edit(
-            f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @clutch008</i></b>\n"
-            f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
+            f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @Clutch008</i></b>\n"
+            f"<i>Reason: {e}</i>"
         )
 
 @Bot.on_message(filters.command('commands') & filters.private & admin)
