@@ -374,8 +374,8 @@ async def start_command(client: Client, message: Message):
         reply_markup = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton("🌟 ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs", url="https://t.me/animepulse_multi"),
-                    InlineKeyboardButton("📢 ᴜᴘᴅᴀᴛᴇs", url="https://t.me/animepulse_multi")
+                    InlineKeyboardButton("🌟 ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs", url="https://t.me/koianimes"),
+                    InlineKeyboardButton("📢 ᴜᴘᴅᴀᴛᴇs", url="https://t.me/koianimes")
                 ],
                 [
                     InlineKeyboardButton("ℹ️ ᴀʙᴏᴜᴛ", callback_data="about"),
@@ -482,7 +482,7 @@ async def not_joined(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Final Error: {e}")
         await temp.edit(
-            f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @Clutch008</i></b>\n"
+            f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @ROHITREDDY69</i></b>\n"
             f"<i>Reason: {e}</i>"
         )
 
